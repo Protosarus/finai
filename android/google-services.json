@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "339273049872",
+    "project_id": "finai-abf1e",
+    "storage_bucket": "finai-abf1e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:339273049872:android:54529dd6b870314cdc2795",
+        "android_client_info": {
+          "package_name": "com.finai.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBnUqvQ3mL8bsZ_NGnV4Br9iM9k6nElwQQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
