@@ -3,7 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/auth_provider.dart';
-import 'package:finai/features/dashboard/presentation/screens/dashboard_screen.dart';
+import '../../../onboarding/presentation/screens/onboarding_screen.dart';
 
 class RegisterScreen extends ConsumerStatefulWidget {
   const RegisterScreen({super.key});
@@ -52,7 +52,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
     if (success && mounted) {
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const DashboardScreen()),
+        MaterialPageRoute(builder: (_) => const OnboardingScreen()),
       );
     }
   }
@@ -63,7 +63,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
     if (success && mounted) {
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const DashboardScreen()),
+        MaterialPageRoute(builder: (_) => const OnboardingScreen()),
       );
     }
   }
@@ -303,7 +303,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     children: [
                       Expanded(
                         child: Divider(
-                          color: Colors.white.withOpacity(0.3),
+                          color: Colors.white.withValues(alpha: 0.3),
                           thickness: 1,
                         ),
                       ),
@@ -312,13 +312,13 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         child: Text(
                           'veya',
                           style: TextStyle(
-                            color: Colors.white.withOpacity(0.7),
+                            color: Colors.white.withValues(alpha: 0.7),
                           ),
                         ),
                       ),
                       Expanded(
                         child: Divider(
-                          color: Colors.white.withOpacity(0.3),
+                          color: Colors.white.withValues(alpha: 0.3),
                           thickness: 1,
                         ),
                       ),
@@ -379,7 +379,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                           text: 'Zaten hesabın var mı? ',
                           style:
                               Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                    color: Colors.white.withOpacity(0.8),
+                                    color: Colors.white.withValues(alpha: 0.8),
                                   ),
                           children: [
                             TextSpan(
