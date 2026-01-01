@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../transactions/presentation/screens/add_transaction_screen.dart';
 import '../../../transactions/data/models/transaction_model.dart';
+import '../../../transactions/presentation/providers/transaction_provider.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -20,6 +21,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
     final firstName = user?.displayName?.split(' ').first ?? 'Kullanıcı';
+    final transactionState = ref.watch(transactionProvider);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
@@ -124,9 +126,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       ],
                     ),
                     const SizedBox(height: 12),
-                    const Text(
-                      '₺24,500',
-                      style: TextStyle(
+                    Text(
+                      '₺${transactionState.monthlyBalance.toStringAsFixed(0)}',
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 36,
                         fontWeight: FontWeight.bold,
@@ -138,7 +140,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                         Expanded(
                           child: _buildBalanceItem(
                             '↓ Gelir',
-                            '₺32,000',
+                            '₺${transactionState.monthlyIncome.toStringAsFixed(0)}',
                             Colors.green[300]!,
                           ),
                         ),
@@ -146,7 +148,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                         Expanded(
                           child: _buildBalanceItem(
                             '↑ Gider',
-                            '₺7,500',
+                            '₺${transactionState.monthlyExpense.toStringAsFixed(0)}',
                             const Color(0xFFEF4444),
                           ),
                         ),
