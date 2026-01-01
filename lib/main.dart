@@ -4,9 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'firebase_options.dart';
 import 'core/theme/app_theme.dart';
-import 'features/auth/presentation/screens/welcome_screen.dart';
+import 'core/widgets/phoenix.dart';
+import 'features/auth/presentation/screens/login_screen.dart';
+import 'features/language/presentation/screens/language_selection_screen.dart';
+import 'l10n/app_localizations_delegate.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -37,14 +41,37 @@ void main() async {
   await Hive.initFlutter();
 
   runApp(
-    const ProviderScope(
-      child: FinAIApp(),
+    Phoenix(
+      child: const ProviderScope(
+        child: FinAIApp(),
+      ),
     ),
   );
 }
 
-class FinAIApp extends StatelessWidget {
+class FinAIApp extends StatefulWidget {
   const FinAIApp({super.key});
+
+  @override
+  State<FinAIApp> createState() => _FinAIAppState();
+}
+
+class _FinAIAppState extends State<FinAIApp> {
+  Locale _locale = const Locale('en'); // Default locale
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLocale();
+  }
+
+  Future<void> _loadLocale() async {
+    final box = await Hive.openBox('settings');
+    final languageCode = box.get('language', defaultValue: 'en');
+    setState(() {
+      _locale = Locale(languageCode);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -52,6 +79,17 @@ class FinAIApp extends StatelessWidget {
       title: 'FinAI Coach',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
+      locale: _locale,
+      localizationsDelegates: const [
+        AppLocalizationsDelegate(),
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [
+        Locale('en'),
+        Locale('tr'),
+      ],
       home: const SplashScreen(),
     );
   }
@@ -76,10 +114,21 @@ class _SplashScreenState extends State<SplashScreen> {
     await Future.delayed(const Duration(seconds: 2));
 
     if (mounted) {
-      // Welcome ekranına geç
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const WelcomeScreen()),
-      );
+      // Dil seçimi yapılmış mı kontrol et
+      final box = await Hive.openBox('settings');
+      final selectedLanguage = box.get('language');
+
+      if (selectedLanguage == null) {
+        // Dil seçilmemiş - Language Selection ekranına git
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const LanguageSelectionScreen()),
+        );
+      } else {
+        // Dil seçilmiş - Login ekranına git
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+        );
+      }
     }
   }
 

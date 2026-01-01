@@ -53,6 +53,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
+  Future<void> _handleAppleSignIn() async {
+    // TODO: Implement Apple Sign-In
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Apple Sign-In yakında eklenecek!'),
+        backgroundColor: Colors.orange,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authNotifierProvider);
@@ -84,20 +94,38 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             child: Form(
               key: _formKey,
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Back Button
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.arrow_back, color: Colors.white),
+                  const SizedBox(height: 40),
+
+                  // App Icon
+                  Container(
+                    width: 100,
+                    height: 100,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 20,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.account_balance_wallet,
+                      size: 50,
+                      color: Color(0xFF6366F1),
+                    ),
                   ),
 
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 24),
 
-                  // Title
+                  // App Title
                   Text(
-                    'Hoş Geldin!',
-                    style: Theme.of(context).textTheme.displayLarge?.copyWith(
+                    'FinAI Coach',
+                    style: Theme.of(context).textTheme.displayMedium?.copyWith(
                           color: Colors.white,
                           fontWeight: FontWeight.bold,
                         ),
@@ -105,14 +133,31 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                   const SizedBox(height: 8),
 
+                  // Subtitle
                   Text(
-                    'Finansal yolculuğuna devam et',
+                    'Finansal geleceğini\nYapay Zeka ile yönet',
+                    textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           color: Colors.white70,
                         ),
                   ),
 
                   const SizedBox(height: 48),
+
+                  // Welcome Text
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Welcome!',
+                      style:
+                          Theme.of(context).textTheme.headlineMedium?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 24),
 
                   // Email Field
                   Container(
@@ -251,45 +296,86 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                   const SizedBox(height: 24),
 
-                  // Google Sign-In Button
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton(
-                      onPressed:
-                          authState.isLoading ? null : _handleGoogleSignIn,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        side: const BorderSide(color: Colors.white, width: 2),
-                        padding: const EdgeInsets.symmetric(vertical: 18),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
+                  // Social Sign-In Buttons (Google & Apple)
+                  Row(
+                    children: [
+                      // Google Sign-In
+                      Expanded(
+                        child: Container(
+                          height: 64,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.1),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: authState.isLoading
+                                  ? null
+                                  : _handleGoogleSignIn,
+                              borderRadius: BorderRadius.circular(16),
+                              child: Center(
+                                child: Image.network(
+                                  'https://www.google.com/favicon.ico',
+                                  width: 32,
+                                  height: 32,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    return const Icon(
+                                      Icons.g_mobiledata,
+                                      size: 32,
+                                      color: Color(0xFF4285F4),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Image.network(
-                            'https://www.google.com/favicon.ico',
-                            width: 24,
-                            height: 24,
-                            errorBuilder: (context, error, stackTrace) {
-                              return const Icon(Icons.g_mobiledata, size: 24);
-                            },
+
+                      const SizedBox(width: 16),
+
+                      // Apple Sign-In
+                      Expanded(
+                        child: Container(
+                          height: 64,
+                          decoration: BoxDecoration(
+                            color: Colors.black,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.2),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 12),
-                          Text(
-                            'Google ile Devam Et',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
-                                ?.copyWith(
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: authState.isLoading
+                                  ? null
+                                  : _handleAppleSignIn,
+                              borderRadius: BorderRadius.circular(16),
+                              child: const Center(
+                                child: Icon(
+                                  Icons.apple,
+                                  size: 32,
                                   color: Colors.white,
-                                  fontWeight: FontWeight.w600,
                                 ),
+                              ),
+                            ),
                           ),
-                        ],
+                        ),
                       ),
-                    ),
+                    ],
                   ),
 
                   const SizedBox(height: 32),
