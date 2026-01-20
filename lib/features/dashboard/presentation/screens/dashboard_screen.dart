@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:finai/features/transactions/presentation/screens/add_transaction_screen.dart';
 import 'package:finai/features/transactions/data/models/transaction_model.dart';
 import 'package:finai/features/auth/presentation/screens/profile_screen.dart';
+import 'package:finai/features/ai_assistant/presentation/screens/ai_assistant_screen.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -369,10 +370,23 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final isSelected = _selectedIndex == index;
     return InkWell(
       onTap: () {
+        print('🔍 Tıklanan index: $index');
+        print('🔍 Label: $label');
         setState(() => _selectedIndex = index);
-        if (index == 3) {
-          Navigator.push(context,
-              MaterialPageRoute(builder: (context) => const ProfileScreen()));
+
+        // Navigation
+        if (index == 2) {
+          print('🤖 AI Koç navigasyonu başlatılıyor...');
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const AIAssistantScreen()),
+          );
+        } else if (index == 3) {
+          print('👤 Profil navigasyonu başlatılıyor...');
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const ProfileScreen()),
+          );
         }
       },
       child: Column(
