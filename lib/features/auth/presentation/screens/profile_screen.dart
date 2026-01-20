@@ -6,6 +6,12 @@ import 'package:finai/features/auth/presentation/screens/login_screen.dart';
 import 'package:finai/core/providers/theme_provider.dart';
 import 'package:finai/features/transactions/presentation/providers/transaction_provider.dart';
 import 'package:finai/features/transactions/data/models/transaction_model.dart';
+import 'package:excel/excel.dart' as excel_pkg;
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+import 'dart:io';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -52,6 +58,251 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
+  // ========== EXPORT FONKSİYONLARI ==========
+
+  Future<void> _exportToExcel() async {
+    try {
+      setState(() => _isLoading = true);
+
+      final transactionState = ref.read(transactionProvider);
+      final transactions = transactionState.transactions;
+
+      if (transactions.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Henuz islem yok!'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      // Excel dosyası oluştur
+      var excel = excel_pkg.Excel.createExcel();
+      excel_pkg.Sheet sheet = excel['Islemler'];
+
+      // Başlıkları ekle
+      sheet.appendRow([
+        excel_pkg.TextCellValue('Tarih'),
+        excel_pkg.TextCellValue('Tur'),
+        excel_pkg.TextCellValue('Kategori'),
+        excel_pkg.TextCellValue('Tutar (TL)'),
+        excel_pkg.TextCellValue('Aciklama'),
+      ]);
+
+      // İşlemleri ekle
+      for (var transaction in transactions) {
+        sheet.appendRow([
+          excel_pkg.TextCellValue(
+              '${transaction.date.day}/${transaction.date.month}/${transaction.date.year}'),
+          excel_pkg.TextCellValue(
+              transaction.type.name == 'income' ? 'Gelir' : 'Gider'),
+          excel_pkg.TextCellValue(transaction.category.displayName),
+          excel_pkg.DoubleCellValue(transaction.amount),
+          excel_pkg.TextCellValue(transaction.description),
+        ]);
+      }
+
+      // Özet bilgileri ekle
+      sheet.appendRow([]);
+      sheet.appendRow([excel_pkg.TextCellValue('OZET')]);
+      sheet.appendRow([
+        excel_pkg.TextCellValue('Toplam Gelir'),
+        excel_pkg.DoubleCellValue(transactionState.totalIncome),
+      ]);
+      sheet.appendRow([
+        excel_pkg.TextCellValue('Toplam Gider'),
+        excel_pkg.DoubleCellValue(transactionState.totalExpense),
+      ]);
+      sheet.appendRow([
+        excel_pkg.TextCellValue('Net Bakiye'),
+        excel_pkg.DoubleCellValue(
+            transactionState.totalIncome - transactionState.totalExpense),
+      ]);
+
+      // Dosyayı kaydet
+      final directory = await getApplicationDocumentsDirectory();
+      final filePath =
+          '${directory.path}/FinAI_Islemler_${DateTime.now().millisecondsSinceEpoch}.xlsx';
+
+      File(filePath)
+        ..createSync(recursive: true)
+        ..writeAsBytesSync(excel.encode()!);
+
+      // Dosyayı paylaş
+      await Share.shareXFiles([XFile(filePath)], text: 'FinAI Islem Raporu');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Excel raporu basariyla olusturuldu! ✅'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Hata: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _exportToPdf() async {
+    try {
+      setState(() => _isLoading = true);
+
+      final transactionState = ref.read(transactionProvider);
+      final transactions = transactionState.currentMonthTransactions;
+      final archetype = _calculateArchetype();
+
+      final pdf = pw.Document();
+
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          build: (pw.Context context) {
+            return [
+              // Başlık
+              pw.Header(
+                level: 0,
+                child: pw.Text(
+                  'FinAI Aylik Rapor',
+                  style: pw.TextStyle(
+                      fontSize: 24, fontWeight: pw.FontWeight.bold),
+                ),
+              ),
+              pw.SizedBox(height: 20),
+
+              // Finansal Arketip
+              pw.Container(
+                padding: const pw.EdgeInsets.all(16),
+                decoration: pw.BoxDecoration(
+                  color: PdfColors.grey200,
+                  borderRadius:
+                      const pw.BorderRadius.all(pw.Radius.circular(8)),
+                ),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(
+                      'Finansal Arketip: ${archetype['name']}',
+                      style: pw.TextStyle(
+                          fontSize: 18, fontWeight: pw.FontWeight.bold),
+                    ),
+                    pw.SizedBox(height: 8),
+                    pw.Text(archetype['description']),
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 20),
+
+              // Özet
+              pw.Text(
+                'Ozet',
+                style:
+                    pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+              ),
+              pw.SizedBox(height: 10),
+              pw.Table.fromTextArray(
+                headers: ['Kategori', 'Tutar'],
+                data: [
+                  [
+                    'Toplam Gelir',
+                    'TL ${transactionState.monthlyIncome.toStringAsFixed(2)}'
+                  ],
+                  [
+                    'Toplam Gider',
+                    'TL ${transactionState.monthlyExpense.toStringAsFixed(2)}'
+                  ],
+                  [
+                    'Net Bakiye',
+                    'TL ${(transactionState.monthlyIncome - transactionState.monthlyExpense).toStringAsFixed(2)}'
+                  ],
+                ],
+                headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                cellAlignment: pw.Alignment.centerLeft,
+              ),
+              pw.SizedBox(height: 20),
+
+              // İşlemler
+              pw.Text(
+                'Bu Ay Islemler (${transactions.length} adet)',
+                style:
+                    pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+              ),
+              pw.SizedBox(height: 10),
+
+              if (transactions.isNotEmpty)
+                pw.Table.fromTextArray(
+                  headers: ['Tarih', 'Kategori', 'Tutar', 'Aciklama'],
+                  data: transactions
+                      .map((t) => [
+                            '${t.date.day}/${t.date.month}',
+                            t.category.displayName,
+                            '${t.type.name == 'income' ? '+' : '-'}TL${t.amount.toStringAsFixed(2)}',
+                            t.description.length > 30
+                                ? '${t.description.substring(0, 30)}...'
+                                : t.description,
+                          ])
+                      .toList(),
+                  headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                  cellAlignment: pw.Alignment.centerLeft,
+                )
+              else
+                pw.Text('Bu ay henuz islem yok.'),
+
+              pw.SizedBox(height: 30),
+              pw.Text(
+                'Rapor Tarihi: ${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year}',
+                style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey),
+              ),
+            ];
+          },
+        ),
+      );
+
+      // Dosyayı kaydet
+      final directory = await getApplicationDocumentsDirectory();
+      final filePath =
+          '${directory.path}/FinAI_Rapor_${DateTime.now().millisecondsSinceEpoch}.pdf';
+      final file = File(filePath);
+      await file.writeAsBytes(await pdf.save());
+
+      // Dosyayı paylaş
+      await Share.shareXFiles([XFile(filePath)], text: 'FinAI Aylik Rapor');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('PDF raporu basariyla olusturuldu! ✅'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Hata: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   // Finansal Arketip Hesapla
   Map<String, dynamic> _calculateArchetype() {
     final transactionState = ref.watch(transactionProvider);
@@ -61,10 +312,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     if (monthlyIncome == 0) {
       return {
-        'name': 'Yeni Başlayan',
+        'name': 'Yeni Baslayan',
         'icon': '🌱',
         'color': Colors.blue,
-        'description': 'İlk adımlarını atıyorsun!',
+        'description': 'Ilk adimlarini atiyorsun!',
       };
     }
 
@@ -72,11 +323,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     if (spendingRatio >= 0.8) {
       return {
-        'name': 'Müsrif',
+        'name': 'Musrif',
         'icon': '💸',
         'color': Colors.red,
         'description':
-            'Gelirinin %${(spendingRatio * 100).toInt()}\'unu harcıyorsun!',
+            'Gelirinin %${(spendingRatio * 100).toInt()}\'unu harciyorsun!',
       };
     } else if (spendingRatio >= 0.5) {
       return {
@@ -94,10 +345,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       };
     } else {
       return {
-        'name': 'Tasarruf Ustası',
+        'name': 'Tasarruf Ustasi',
         'icon': '🏆',
         'color': const Color(0xFFFFD700),
-        'description': 'Mükemmel finansal disiplin!',
+        'description': 'Mukemmel finansal disiplin!',
       };
     }
   }
@@ -109,7 +360,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         .where((t) => t.type.name == 'expense')
         .toList();
 
-    if (monthlyTransactions.isEmpty) return 'Henüz yok';
+    if (monthlyTransactions.isEmpty) return 'Henuz yok';
 
     final categoryTotals = <String, double>{};
     for (var transaction in monthlyTransactions) {
@@ -132,7 +383,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-              content: Text('Profil güncellendi ✅'),
+              content: Text('Profil guncellendi ✅'),
               backgroundColor: Colors.green),
         );
         setState(() => _isEditing = false);
@@ -152,17 +403,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Çıkış Yap'),
-        content: const Text('Oturumu kapatmak istediğinize emin misiniz?'),
+        title: const Text('Cikis Yap'),
+        content: const Text('Oturumu kapatmak istediginize emin misiniz?'),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('İptal', style: TextStyle(color: Colors.grey)),
+            child: const Text('Iptal', style: TextStyle(color: Colors.grey)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Çıkış Yap',
+            child: const Text('Cikis Yap',
                 style:
                     TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
           ),
@@ -187,11 +438,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Aylık Bütçe Limiti'),
+        title: const Text('Aylik Butce Limiti'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Bu tutarı aştığınızda sizi uyaracağız.'),
+            const Text('Bu tutari astiginizda sizi uyaracagiz.'),
             const SizedBox(height: 16),
             TextField(
               controller: controller,
@@ -206,7 +457,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('İptal')),
+              child: const Text('Iptal')),
           ElevatedButton(
             onPressed: () async {
               final newValue = double.tryParse(controller.text) ?? _budgetLimit;
@@ -236,11 +487,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Para Birimi Seçin',
+            const Text('Para Birimi Secin',
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
-            _buildCurrencyOption('Türk Lirası', 'TRY', '₺'),
-            _buildCurrencyOption('Amerikan Doları', 'USD', '\$'),
+            _buildCurrencyOption('Turk Lirasi', 'TRY', '₺'),
+            _buildCurrencyOption('Amerikan Dolari', 'USD', '\$'),
             _buildCurrencyOption('Euro', 'EUR', '€'),
           ],
         ),
@@ -293,18 +544,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             const Text('Verileri Dışa Aktar',
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            const Text('Tüm harcama geçmişinizi raporlayın.',
+            const Text('Tüm harcama geçmişinizi raporlayin.',
                 style: TextStyle(color: Colors.grey)),
             const SizedBox(height: 24),
             Row(
               children: [
                 Expanded(
-                    child: _buildExportButton(
-                        Icons.table_chart, 'Excel (.xlsx)', Colors.green)),
+                    child: _buildExportButton(Icons.table_chart,
+                        'Excel (.xlsx)', Colors.green, _exportToExcel)),
                 const SizedBox(width: 16),
                 Expanded(
-                    child: _buildExportButton(
-                        Icons.picture_as_pdf, 'PDF Raporu', Colors.red)),
+                    child: _buildExportButton(Icons.picture_as_pdf,
+                        'PDF Raporu', Colors.red, _exportToPdf)),
               ],
             ),
             const SizedBox(height: 16),
@@ -314,13 +565,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
   }
 
-  Widget _buildExportButton(IconData icon, String label, Color color) {
+  Widget _buildExportButton(
+      IconData icon, String label, Color color, VoidCallback onTap) {
     return InkWell(
       onTap: () {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Rapor hazırlanıyor... (Demo)')),
-        );
+        onTap();
       },
       borderRadius: BorderRadius.circular(16),
       child: Container(
@@ -364,308 +614,321 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     return Scaffold(
       backgroundColor: backgroundColor,
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            // --- ÜST HEADER ---
-            Stack(
-              clipBehavior: Clip.none,
-              alignment: Alignment.center,
+      body: Stack(
+        children: [
+          SingleChildScrollView(
+            child: Column(
               children: [
-                Container(
-                  height: 220,
-                  width: double.infinity,
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.only(
-                      bottomLeft: Radius.circular(40),
-                      bottomRight: Radius.circular(40),
-                    ),
-                  ),
-                  child: SafeArea(
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 10, right: 20),
-                      child: Align(
-                        alignment: Alignment.topRight,
-                        child: IconButton(
-                          onPressed: () =>
-                              setState(() => _isEditing = !_isEditing),
-                          icon: Icon(_isEditing ? Icons.close : Icons.edit,
-                              color: Colors.white),
+                // --- ÜST HEADER ---
+                Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.center,
+                  children: [
+                    Container(
+                      height: 220,
+                      width: double.infinity,
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.only(
+                          bottomLeft: Radius.circular(40),
+                          bottomRight: Radius.circular(40),
+                        ),
+                      ),
+                      child: SafeArea(
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 10, right: 20),
+                          child: Align(
+                            alignment: Alignment.topRight,
+                            child: IconButton(
+                              onPressed: () =>
+                                  setState(() => _isEditing = !_isEditing),
+                              icon: Icon(_isEditing ? Icons.close : Icons.edit,
+                                  color: Colors.white),
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ),
-                Positioned(
-                  bottom: -50,
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration:
-                        BoxDecoration(color: cardColor, shape: BoxShape.circle),
-                    child: CircleAvatar(
-                      radius: 55,
-                      backgroundColor: const Color(0xFFE0E7FF),
-                      backgroundImage: _user?.photoURL != null
-                          ? NetworkImage(_user!.photoURL!)
-                          : null,
-                      child: _user?.photoURL == null
-                          ? Text(initial,
-                              style: const TextStyle(
-                                  fontSize: 40,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF6366F1)))
-                          : null,
+                    Positioned(
+                      bottom: -50,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                            color: cardColor, shape: BoxShape.circle),
+                        child: CircleAvatar(
+                          radius: 55,
+                          backgroundColor: const Color(0xFFE0E7FF),
+                          backgroundImage: _user?.photoURL != null
+                              ? NetworkImage(_user!.photoURL!)
+                              : null,
+                          child: _user?.photoURL == null
+                              ? Text(initial,
+                                  style: const TextStyle(
+                                      fontSize: 40,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF6366F1)))
+                              : null,
+                        ),
+                      ),
                     ),
+                  ],
+                ),
+
+                const SizedBox(height: 60),
+
+                // Kullanıcı Bilgisi
+                if (!_isEditing) ...[
+                  Text(
+                    _user?.displayName ?? 'Kullanici',
+                    style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: textColor),
+                  ),
+                  Text(_user?.email ?? '',
+                      style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+                ],
+
+                const SizedBox(height: 20),
+
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // --- FİNANSAL ARKETİP KARTI ---
+                      if (!_isEditing) ...[
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                (archetype['color'] as Color).withOpacity(0.8),
+                                (archetype['color'] as Color).withOpacity(0.4),
+                              ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: (archetype['color'] as Color)
+                                    .withOpacity(0.3),
+                                blurRadius: 15,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            children: [
+                              Text(
+                                archetype['icon'],
+                                style: const TextStyle(fontSize: 60),
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'Finansal Arketip',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.white.withOpacity(0.9),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                archetype['name'],
+                                style: const TextStyle(
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                archetype['description'],
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.white,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 24),
+
+                        // --- BU AY İSTATİSTİKLER ---
+                        _buildSectionHeader('Bu Ay', isDarkMode),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildStatCard(
+                                '₺${transactionState.monthlyExpense.toStringAsFixed(0)}',
+                                'Harcama',
+                                Icons.arrow_upward,
+                                Colors.red,
+                                cardColor,
+                                textColor,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildStatCard(
+                                '₺${dailyAverage.toStringAsFixed(0)}',
+                                'Gunluk Ort.',
+                                Icons.calendar_today,
+                                Colors.blue,
+                                cardColor,
+                                textColor,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        _buildStatCard(
+                          topCategory,
+                          'En Cok Harcanan',
+                          Icons.star,
+                          Colors.orange,
+                          cardColor,
+                          textColor,
+                        ),
+
+                        const SizedBox(height: 30),
+                      ],
+
+                      // --- DÜZENLEME MODU ---
+                      if (_isEditing) ...[
+                        _buildSectionHeader('Profili Duzenle', isDarkMode),
+                        _buildTextField(
+                            label: 'Ad Soyad',
+                            controller: _nameController,
+                            icon: Icons.person_outline,
+                            cardColor: cardColor),
+                        const SizedBox(height: 12),
+                        _buildTextField(
+                            label: 'Telefon',
+                            controller: _phoneController,
+                            icon: Icons.phone_outlined,
+                            keyboardType: TextInputType.phone,
+                            cardColor: cardColor),
+                        const SizedBox(height: 20),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: _isLoading ? null : _saveProfile,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF6366F1),
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12)),
+                            ),
+                            child: _isLoading
+                                ? const CircularProgressIndicator(
+                                    color: Colors.white)
+                                : const Text('Kaydet',
+                                    style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold)),
+                          ),
+                        ),
+                        const SizedBox(height: 30),
+                      ],
+
+                      // --- FİNANSAL AYARLAR ---
+                      _buildSectionHeader('Finansal Ayarlar', isDarkMode),
+                      _buildMenuTile(
+                        title: 'Aylik Butce Limiti',
+                        subtitle: '₺${_budgetLimit.toStringAsFixed(0)}',
+                        icon: Icons.account_balance_wallet_outlined,
+                        onTap: _showBudgetDialog,
+                        cardColor: cardColor,
+                        textColor: textColor,
+                      ),
+                      const SizedBox(height: 12),
+                      _buildMenuTile(
+                        title: 'Para Birimi',
+                        subtitle: _currency,
+                        icon: Icons.currency_exchange,
+                        onTap: _showCurrencyDialog,
+                        cardColor: cardColor,
+                        textColor: textColor,
+                      ),
+
+                      const SizedBox(height: 24),
+
+                      // --- UYGULAMA AYARLARI ---
+                      _buildSectionHeader('Uygulama', isDarkMode),
+                      _buildSwitchTile(
+                        title: 'Bildirimler',
+                        icon: Icons.notifications_outlined,
+                        value: _notificationsEnabled,
+                        onChanged: (val) async {
+                          final box = await Hive.openBox('settings');
+                          await box.put('notifications', val);
+                          setState(() => _notificationsEnabled = val);
+                        },
+                        cardColor: cardColor,
+                        textColor: textColor,
+                      ),
+                      const SizedBox(height: 12),
+                      _buildSwitchTile(
+                        title: 'Karanlik Mod',
+                        icon: Icons.dark_mode_outlined,
+                        value: isDarkMode,
+                        onChanged: (val) {
+                          ref.read(themeProvider.notifier).toggleTheme(val);
+                        },
+                        cardColor: cardColor,
+                        textColor: textColor,
+                      ),
+
+                      const SizedBox(height: 24),
+
+                      // --- VERİ YÖNETİMİ ---
+                      _buildSectionHeader('Veri Yonetimi', isDarkMode),
+                      _buildMenuTile(
+                        title: 'Dışa Aktar (Excel/PDF)',
+                        icon: Icons.download_outlined,
+                        onTap: _showExportDialog,
+                        cardColor: cardColor,
+                        textColor: textColor,
+                      ),
+
+                      const SizedBox(height: 32),
+
+                      // --- ÇIKIŞ ---
+                      _buildMenuTile(
+                        title: 'Çıkış Yap',
+                        icon: Icons.logout,
+                        color: Colors.red[50],
+                        iconColor: Colors.red,
+                        textColor: Colors.red,
+                        onTap: _handleLogout,
+                        cardColor: cardColor,
+                      ),
+                      const SizedBox(height: 40),
+                    ],
                   ),
                 ),
               ],
             ),
+          ),
 
-            const SizedBox(height: 60),
-
-            // Kullanıcı Bilgisi
-            if (!_isEditing) ...[
-              Text(
-                _user?.displayName ?? 'Kullanıcı',
-                style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: textColor),
-              ),
-              Text(_user?.email ?? '',
-                  style: TextStyle(fontSize: 14, color: Colors.grey[600])),
-            ],
-
-            const SizedBox(height: 20),
-
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // --- FİNANSAL ARKETİP KARTI ---
-                  if (!_isEditing) ...[
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            (archetype['color'] as Color).withOpacity(0.8),
-                            (archetype['color'] as Color).withOpacity(0.4),
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color:
-                                (archetype['color'] as Color).withOpacity(0.3),
-                            blurRadius: 15,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        children: [
-                          Text(
-                            archetype['icon'],
-                            style: const TextStyle(fontSize: 60),
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            'Finansal Arketip',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.white.withOpacity(0.9),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            archetype['name'],
-                            style: const TextStyle(
-                              fontSize: 28,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            archetype['description'],
-                            style: const TextStyle(
-                              fontSize: 14,
-                              color: Colors.white,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    // --- BU AY İSTATİSTİKLER ---
-                    _buildSectionHeader('Bu Ay', isDarkMode),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _buildStatCard(
-                            '₺${transactionState.monthlyExpense.toStringAsFixed(0)}',
-                            'Harcama',
-                            Icons.arrow_upward,
-                            Colors.red,
-                            cardColor,
-                            textColor,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _buildStatCard(
-                            '₺${dailyAverage.toStringAsFixed(0)}',
-                            'Günlük Ort.',
-                            Icons.calendar_today,
-                            Colors.blue,
-                            cardColor,
-                            textColor,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    _buildStatCard(
-                      topCategory,
-                      'En Çok Harcanan',
-                      Icons.star,
-                      Colors.orange,
-                      cardColor,
-                      textColor,
-                    ),
-
-                    const SizedBox(height: 30),
-                  ],
-
-                  // --- DÜZENLEME MODU ---
-                  if (_isEditing) ...[
-                    _buildSectionHeader('Profili Düzenle', isDarkMode),
-                    _buildTextField(
-                        label: 'Ad Soyad',
-                        controller: _nameController,
-                        icon: Icons.person_outline,
-                        cardColor: cardColor),
-                    const SizedBox(height: 12),
-                    _buildTextField(
-                        label: 'Telefon',
-                        controller: _phoneController,
-                        icon: Icons.phone_outlined,
-                        keyboardType: TextInputType.phone,
-                        cardColor: cardColor),
-                    const SizedBox(height: 20),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: _isLoading ? null : _saveProfile,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF6366F1),
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                        ),
-                        child: _isLoading
-                            ? const CircularProgressIndicator(
-                                color: Colors.white)
-                            : const Text('Kaydet',
-                                style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold)),
-                      ),
-                    ),
-                    const SizedBox(height: 30),
-                  ],
-
-                  // --- FİNANSAL AYARLAR ---
-                  _buildSectionHeader('Finansal Ayarlar', isDarkMode),
-                  _buildMenuTile(
-                    title: 'Aylık Bütçe Limiti',
-                    subtitle: '₺${_budgetLimit.toStringAsFixed(0)}',
-                    icon: Icons.account_balance_wallet_outlined,
-                    onTap: _showBudgetDialog,
-                    cardColor: cardColor,
-                    textColor: textColor,
-                  ),
-                  const SizedBox(height: 12),
-                  _buildMenuTile(
-                    title: 'Para Birimi',
-                    subtitle: _currency,
-                    icon: Icons.currency_exchange,
-                    onTap: _showCurrencyDialog,
-                    cardColor: cardColor,
-                    textColor: textColor,
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // --- UYGULAMA AYARLARI ---
-                  _buildSectionHeader('Uygulama', isDarkMode),
-                  _buildSwitchTile(
-                    title: 'Bildirimler',
-                    icon: Icons.notifications_outlined,
-                    value: _notificationsEnabled,
-                    onChanged: (val) async {
-                      final box = await Hive.openBox('settings');
-                      await box.put('notifications', val);
-                      setState(() => _notificationsEnabled = val);
-                    },
-                    cardColor: cardColor,
-                    textColor: textColor,
-                  ),
-                  const SizedBox(height: 12),
-                  _buildSwitchTile(
-                    title: 'Karanlık Mod',
-                    icon: Icons.dark_mode_outlined,
-                    value: isDarkMode,
-                    onChanged: (val) {
-                      ref.read(themeProvider.notifier).toggleTheme(val);
-                    },
-                    cardColor: cardColor,
-                    textColor: textColor,
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // --- VERİ YÖNETİMİ ---
-                  _buildSectionHeader('Veri Yönetimi', isDarkMode),
-                  _buildMenuTile(
-                    title: 'Dışa Aktar (Excel/PDF)',
-                    icon: Icons.download_outlined,
-                    onTap: _showExportDialog,
-                    cardColor: cardColor,
-                    textColor: textColor,
-                  ),
-
-                  const SizedBox(height: 32),
-
-                  // --- ÇIKIŞ ---
-                  _buildMenuTile(
-                    title: 'Çıkış Yap',
-                    icon: Icons.logout,
-                    color: Colors.red[50],
-                    iconColor: Colors.red,
-                    textColor: Colors.red,
-                    onTap: _handleLogout,
-                    cardColor: cardColor,
-                  ),
-                  const SizedBox(height: 40),
-                ],
+          // Loading Overlay
+          if (_isLoading)
+            Container(
+              color: Colors.black54,
+              child: const Center(
+                child: CircularProgressIndicator(color: Color(0xFF6366F1)),
               ),
             ),
-          ],
-        ),
+        ],
       ),
     );
   }

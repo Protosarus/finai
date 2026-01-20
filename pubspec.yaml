@@ -55,6 +55,10 @@ dependencies:
   # Icons
   cupertino_icons: ^1.0.6
   quick_actions: ^1.1.0
+  excel: ^4.0.6
+  pdf: ^3.11.3
+  path_provider: ^2.1.5
+  share_plus: ^12.0.1
 
 dev_dependencies:
   flutter_test:
