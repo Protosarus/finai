@@ -29,8 +29,7 @@ class LanguageSelectionScreen extends StatelessWidget {
   Widget _buildLanguageCard({
     required BuildContext context,
     required String flag,
-    required String language,
-    required String nativeName,
+    required String name, // Tek bir isim alacak (English veya Türkçe)
     required String languageCode,
   }) {
     return InkWell(
@@ -54,26 +53,13 @@ class LanguageSelectionScreen extends StatelessWidget {
             ),
             const SizedBox(width: 24),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    language,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    nativeName,
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.8),
-                      fontSize: 16,
-                    ),
-                  ),
-                ],
+              child: Text(
+                name,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 24, // Yazıyı biraz büyüttüm, daha net olsun
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
             Icon(
@@ -103,15 +89,15 @@ class LanguageSelectionScreen extends StatelessWidget {
             padding: const EdgeInsets.all(24.0),
             child: Column(
               children: [
-                const SizedBox(height: 60),
+                const Spacer(flex: 1), // Üstten biraz boşluk bırakır
 
                 // App Icon
                 Container(
-                  width: 110,
-                  height: 110,
+                  width: 120,
+                  height: 120,
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(28),
+                    borderRadius: BorderRadius.circular(30),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withOpacity(0.15),
@@ -122,7 +108,7 @@ class LanguageSelectionScreen extends StatelessWidget {
                   ),
                   child: const Icon(
                     Icons.account_balance_wallet,
-                    size: 56,
+                    size: 60,
                     color: Color(0xFF6366F1),
                   ),
                 ),
@@ -138,36 +124,15 @@ class LanguageSelectionScreen extends StatelessWidget {
                       ),
                 ),
 
+                // BURADAKİ İNGİLİZCE YAZILARI SİLDİK
+
                 const SizedBox(height: 80),
-
-                // Title
-                const Text(
-                  'Select Language',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-
-                const SizedBox(height: 12),
-
-                Text(
-                  'Choose your preferred language',
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.85),
-                    fontSize: 17,
-                  ),
-                ),
-
-                const SizedBox(height: 60),
 
                 // Language Options
                 _buildLanguageCard(
                   context: context,
                   flag: '🇬🇧',
-                  language: 'English',
-                  nativeName: 'English',
+                  name: 'English', // Sadece English
                   languageCode: 'en',
                 ),
 
@@ -176,12 +141,11 @@ class LanguageSelectionScreen extends StatelessWidget {
                 _buildLanguageCard(
                   context: context,
                   flag: '🇹🇷',
-                  language: 'Turkish',
-                  nativeName: 'Türkçe',
+                  name: 'Türkçe', // Sadece Türkçe
                   languageCode: 'tr',
                 ),
 
-                const Spacer(),
+                const Spacer(flex: 2), // Alttan daha fazla boşluk bırakır
               ],
             ),
           ),

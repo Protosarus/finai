@@ -1,20 +1,18 @@
-// lib/features/transactions/presentation/screens/add_transaction_screen.dart
-
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image_picker/image_picker.dart';
-import '../../data/models/transaction_model.dart';
-import '../providers/transaction_provider.dart';
-import '../../../../core/services/camera_service.dart';
-import '../../../../core/services/voice_service.dart';
+import 'package:finai/features/transactions/data/models/transaction_model.dart';
+import 'package:finai/features/transactions/presentation/providers/transaction_provider.dart';
+import 'package:finai/core/services/voice_service.dart';
+import 'package:finai/core/services/camera_service.dart';
 
 class AddTransactionScreen extends ConsumerStatefulWidget {
   final TransactionType type;
+  final bool autoStartVoice;
 
   const AddTransactionScreen({
     super.key,
     required this.type,
+    this.autoStartVoice = false,
   });
 
   @override
@@ -23,16 +21,30 @@ class AddTransactionScreen extends ConsumerStatefulWidget {
 }
 
 class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
-  final _formKey = GlobalKey<FormState>();
   final _amountController = TextEditingController();
   final _descriptionController = TextEditingController();
-  final _cameraService = CameraService();
-  final _voiceService = VoiceService();
-
-  TransactionCategory? _selectedCategory;
+  TransactionCategory _selectedCategory = TransactionCategory.other;
   DateTime _selectedDate = DateTime.now();
-  bool _showFabMenu = false;
+  bool _isListening = false;
   bool _isProcessing = false;
+  bool _isFabMenuOpen = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    if (widget.type == TransactionType.expense) {
+      _selectedCategory = TransactionCategory.food;
+    } else {
+      _selectedCategory = TransactionCategory.salary;
+    }
+
+    if (widget.autoStartVoice) {
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _startListening();
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -41,47 +53,165 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
     super.dispose();
   }
 
-  List<TransactionCategory> get _categories {
-    return widget.type == TransactionType.income
-        ? TransactionCategoryExtension.getIncomeCategories()
-        : TransactionCategoryExtension.getExpenseCategories();
-  }
+  Future<void> _pickImage(bool fromCamera) async {
+    setState(() => _isFabMenuOpen = false);
 
-  Future<void> _selectDate() async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate,
-      firstDate: DateTime(2020),
-      lastDate: DateTime.now(),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: Color(0xFF6366F1),
-              onPrimary: Colors.white,
-              surface: Colors.white,
-              onSurface: Colors.black,
-            ),
+    try {
+      final cameraService = CameraService();
+      final imagePath = fromCamera
+          ? await cameraService.takePhoto()
+          : await cameraService.pickFromGallery();
+
+      if (imagePath != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content:
+                Text('📸 Fotoğraf alındı! OCR özelliği yakında eklenecek.'),
+            backgroundColor: Colors.blue,
           ),
-          child: child!,
         );
-      },
-    );
-
-    if (picked != null) {
-      setState(() {
-        _selectedDate = picked;
-      });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Kamera hatası: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
-  void _handleSave() async {
-    if (!_formKey.currentState!.validate()) return;
-    if (_selectedCategory == null) {
+  Future<void> _startListening() async {
+    if (_isListening) return;
+
+    setState(() {
+      _isFabMenuOpen = false;
+      _isListening = true;
+    });
+
+    try {
+      final voiceService = VoiceService();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🎤 Dinliyorum... Örnek: "50 TL market alışverişi"'),
+            duration: Duration(seconds: 2),
+            backgroundColor: Color(0xFF6366F1),
+          ),
+        );
+      }
+
+      final result = await voiceService.listen();
+
+      if (result != null && result.isNotEmpty && mounted) {
+        setState(() => _isProcessing = true);
+
+        final analyzed = await voiceService.analyzeWithAI(result);
+
+        if (analyzed != null && mounted) {
+          setState(() {
+            if (analyzed['amount'] != null) {
+              _amountController.text = analyzed['amount'].toString();
+            }
+
+            if (analyzed['description'] != null) {
+              _descriptionController.text = analyzed['description'];
+            }
+
+            if (analyzed['category'] != null) {
+              _selectedCategory = _mapAICategory(analyzed['category']);
+            }
+          });
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content:
+                  Text('✅ ${analyzed['description'] ?? 'İşlem algılandı!'}'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('⚠️ Komut anlaşılamadı, lütfen tekrar deneyin'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🔇 Ses algılanamadı'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Hata: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isListening = false;
+          _isProcessing = false;
+        });
+      }
+    }
+  }
+
+  TransactionCategory _mapAICategory(String aiCategory) {
+    switch (aiCategory.toLowerCase()) {
+      case 'food':
+        return TransactionCategory.food;
+      case 'transport':
+        return TransactionCategory.transport;
+      case 'shopping':
+        return TransactionCategory.shopping;
+      case 'bills':
+        return TransactionCategory.bills;
+      case 'entertainment':
+        return TransactionCategory.entertainment;
+      case 'health':
+        return TransactionCategory.health;
+      case 'education':
+        return TransactionCategory.education;
+      case 'salary':
+        return TransactionCategory.salary;
+      case 'freelance':
+        return TransactionCategory.freelance;
+      case 'investment':
+        return TransactionCategory.investment;
+      default:
+        return TransactionCategory.other;
+    }
+  }
+
+  Future<void> _saveTransaction() async {
+    if (_amountController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Lütfen kategori seçin'),
-          backgroundColor: Colors.red,
+          content: Text('⚠️ Lütfen tutar girin'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final amount = double.tryParse(_amountController.text);
+    if (amount == null || amount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⚠️ Geçerli bir tutar girin'),
+          backgroundColor: Colors.orange,
         ),
       );
       return;
@@ -90,9 +220,11 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
     try {
       await ref.read(transactionProvider.notifier).addTransaction(
             type: widget.type,
-            category: _selectedCategory!,
-            amount: double.parse(_amountController.text),
-            description: _descriptionController.text.trim(),
+            category: _selectedCategory,
+            amount: amount,
+            description: _descriptionController.text.isEmpty
+                ? _selectedCategory.displayName
+                : _descriptionController.text,
             date: _selectedDate,
           );
 
@@ -100,615 +232,352 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              '${widget.type == TransactionType.income ? "Gelir" : "Gider"} eklendi!',
+              '✅ ${widget.type == TransactionType.expense ? "Gider" : "Gelir"} eklendi!',
             ),
             backgroundColor: Colors.green,
           ),
         );
-
-        Navigator.of(context).pop();
+        Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Hata: ${e.toString()}'),
+            content: Text('Hata: $e'),
             backgroundColor: Colors.red,
           ),
         );
       }
-    }
-  }
-
-  void _toggleFabMenu() {
-    setState(() {
-      _showFabMenu = !_showFabMenu;
-    });
-  }
-
-  void _handleNoteAdd() {
-    setState(() {
-      _showFabMenu = false;
-    });
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
-        ),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Not Ekle',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _descriptionController,
-                maxLines: 4,
-                decoration: InputDecoration(
-                  hintText: 'Notunuzu yazın...',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF6366F1),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Text(
-                    'Kaydet',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _handleCameraAction() async {
-    setState(() {
-      _showFabMenu = false;
-      _isProcessing = true;
-    });
-
-    try {
-      // Show camera/gallery options
-      final source = await showModalBottomSheet<ImageSource>(
-        context: context,
-        backgroundColor: Colors.transparent,
-        builder: (context) => Container(
-          padding: const EdgeInsets.all(20),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.camera_alt, color: Color(0xFF6366F1)),
-                title: const Text('Fotoğraf Çek'),
-                onTap: () => Navigator.pop(context, ImageSource.camera),
-              ),
-              ListTile(
-                leading:
-                    const Icon(Icons.photo_library, color: Color(0xFF6366F1)),
-                title: const Text('Galeriden Seç'),
-                onTap: () => Navigator.pop(context, ImageSource.gallery),
-              ),
-            ],
-          ),
-        ),
-      );
-
-      if (source == null) {
-        setState(() => _isProcessing = false);
-        return;
-      }
-
-      // Take/pick photo
-      final imagePath = source == ImageSource.camera
-          ? await _cameraService.takePhoto()
-          : await _cameraService.pickFromGallery();
-
-      if (imagePath != null && mounted) {
-        // TODO: OCR processing
-        // For now, just show success
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Fotoğraf alındı! OCR özelliği yakında...'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Hata: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      setState(() => _isProcessing = false);
-    }
-  }
-
-  void _handleVoiceAction() async {
-    setState(() {
-      _showFabMenu = false;
-      _isProcessing = true;
-    });
-
-    try {
-      // Show listening dialog
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => Dialog(
-          backgroundColor: Colors.transparent,
-          child: Container(
-            padding: const EdgeInsets.all(32),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.mic,
-                  size: 64,
-                  color: Color(0xFF6366F1),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Dinliyorum...',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Örn: "50 TL market harcaması"',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[600],
-                  ),
-                ),
-                const SizedBox(height: 24),
-                const CircularProgressIndicator(),
-              ],
-            ),
-          ),
-        ),
-      );
-
-      // Listen for voice
-      final result = await _voiceService.listen();
-
-      // Close dialog
-      if (mounted) {
-        Navigator.of(context).pop();
-      }
-
-      if (result != null && result.isNotEmpty) {
-        // Parse command
-        final parsed = _voiceService.parseCommand(result);
-
-        setState(() {
-          if (parsed['amount'] != null) {
-            _amountController.text = parsed['amount'].toString();
-          }
-          if (parsed['description'] != null) {
-            _descriptionController.text = parsed['description'];
-          }
-        });
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Komut: "$result"'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Ses algılanamadı, tekrar deneyin'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      // Close dialog if open
-      if (mounted && Navigator.canPop(context)) {
-        Navigator.of(context).pop();
-      }
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Hata: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      setState(() => _isProcessing = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final isIncome = widget.type == TransactionType.income;
-    final color = isIncome ? Colors.green : const Color(0xFFEF4444);
+    final isExpense = widget.type == TransactionType.expense;
+    final mainColor =
+        isExpense ? const Color(0xFFEF4444) : const Color(0xFF10B981);
+
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final backgroundColor = Theme.of(context).scaffoldBackgroundColor;
+    final textColor = Theme.of(context).textTheme.bodyLarge!.color!;
+
+    final amountBoxColor = Colors.white;
+    final amountTextColor = Colors.black;
+
+    final cardColor = isDarkMode ? const Color(0xFF2C2C2C) : Colors.white;
+    final borderColor = isDarkMode ? Colors.grey[700]! : Colors.grey[300]!;
+
+    final categories = isExpense
+        ? TransactionCategoryExtension.getExpenseCategories()
+        : TransactionCategoryExtension.getIncomeCategories();
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          onPressed: () => Navigator.of(context).pop(),
-          icon: const Icon(Icons.close, color: Colors.black),
-        ),
-        title: Text(
-          isIncome ? 'Gelir Ekle' : 'Gider Ekle',
-          style: const TextStyle(
-            color: Colors.black,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ),
+      backgroundColor: backgroundColor,
       body: Stack(
         children: [
-          SingleChildScrollView(
-            padding: const EdgeInsets.all(20.0),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Amount Input
-                  Container(
+          SafeArea(
+            child: Column(
+              children: [
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: Icon(Icons.close, size: 28, color: textColor),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                      Expanded(
+                        child: Text(
+                          isExpense ? 'Gider Ekle' : 'Gelir Ekle',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: textColor,
+                          ),
+                        ),
+                      ),
+                      if (_isProcessing)
+                        const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      else
+                        const SizedBox(width: 48),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
                     padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Tutar',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[600],
-                            fontWeight: FontWeight.w500,
+                        Text('Tutar',
+                            style: TextStyle(
+                                color: textColor.withOpacity(0.7),
+                                fontSize: 16)),
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 24, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: amountBoxColor,
+                            borderRadius: BorderRadius.circular(24),
+                          ),
+                          child: TextField(
+                            controller: _amountController,
+                            keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true),
+                            style: TextStyle(
+                              color: amountTextColor,
+                              fontSize: 40,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            textAlign: TextAlign.center,
+                            decoration: InputDecoration(
+                              border: InputBorder.none,
+                              hintText: '0',
+                              hintStyle: TextStyle(
+                                  color: amountTextColor.withOpacity(0.5)),
+                              prefixText: '₺',
+                              prefixStyle: TextStyle(
+                                  color: amountTextColor.withOpacity(0.5),
+                                  fontSize: 40),
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        TextFormField(
-                          controller: _amountController,
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [
-                            FilteringTextInputFormatter.digitsOnly,
-                          ],
-                          style: TextStyle(
-                            fontSize: 36,
-                            fontWeight: FontWeight.bold,
-                            color: color,
-                          ),
+                        const SizedBox(height: 32),
+                        Text('Kategori',
+                            style: TextStyle(
+                                color: textColor,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 16),
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 12,
+                          children: categories.map((cat) {
+                            final isSelected = _selectedCategory == cat;
+                            return GestureDetector(
+                              onTap: () =>
+                                  setState(() => _selectedCategory = cat),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 12),
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? mainColor.withOpacity(0.1)
+                                      : cardColor,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: isSelected ? mainColor : borderColor,
+                                    width: isSelected ? 2 : 1,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(cat.icon,
+                                        style: const TextStyle(fontSize: 18)),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      cat.displayName,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        color:
+                                            isSelected ? mainColor : textColor,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                        const SizedBox(height: 32),
+                        Text('Açıklama (İsteğe bağlı)',
+                            style: TextStyle(
+                                color: textColor,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: _descriptionController,
+                          style: TextStyle(color: textColor),
                           decoration: InputDecoration(
-                            prefixText: '₺',
-                            prefixStyle: TextStyle(
-                              fontSize: 36,
-                              fontWeight: FontWeight.bold,
-                              color: color,
+                            hintText: 'Örn: Haftalık market alışverişi',
+                            hintStyle:
+                                TextStyle(color: textColor.withOpacity(0.5)),
+                            filled: true,
+                            fillColor: cardColor,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide(color: borderColor),
                             ),
-                            hintText: '0',
-                            hintStyle: TextStyle(
-                              color: Colors.grey[300],
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide(color: borderColor),
                             ),
-                            border: InputBorder.none,
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide:
+                                  BorderSide(color: mainColor, width: 2),
+                            ),
                           ),
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Tutar gerekli';
+                        ),
+                        const SizedBox(height: 32),
+                        Text('Tarih',
+                            style: TextStyle(
+                                color: textColor,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 12),
+                        InkWell(
+                          onTap: () async {
+                            final picked = await showDatePicker(
+                              context: context,
+                              initialDate: _selectedDate,
+                              firstDate: DateTime(2020),
+                              lastDate: DateTime(2030),
+                              builder: (context, child) {
+                                return Theme(
+                                  data: isDarkMode
+                                      ? ThemeData.dark()
+                                      : ThemeData.light(),
+                                  child: child!,
+                                );
+                              },
+                            );
+                            if (picked != null) {
+                              setState(() => _selectedDate = picked);
                             }
-                            if (double.tryParse(value) == null) {
-                              return 'Geçerli bir tutar girin';
-                            }
-                            return null;
                           },
+                          child: Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: cardColor,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: borderColor),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.calendar_today_rounded,
+                                    color: mainColor),
+                                const SizedBox(width: 12),
+                                Text(
+                                  "${_selectedDate.day}.${_selectedDate.month}.${_selectedDate.year}",
+                                  style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: textColor),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                       ],
                     ),
                   ),
-
-                  const SizedBox(height: 20),
-
-                  // Category Selection
-                  const Text(
-                    'Kategori',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF2D3142),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: _categories.map((category) {
-                      final isSelected = _selectedCategory == category;
-                      return InkWell(
-                        onTap: () {
-                          setState(() {
-                            _selectedCategory = category;
-                          });
-                        },
-                        borderRadius: BorderRadius.circular(12),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
-                          decoration: BoxDecoration(
-                            color: isSelected ? color : Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: isSelected ? color : Colors.grey[300]!,
-                              width: 2,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                category.icon,
-                                style: const TextStyle(fontSize: 20),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                category.displayName,
-                                style: TextStyle(
-                                  color:
-                                      isSelected ? Colors.white : Colors.black,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // Date Selection
-                  const Text(
-                    'Tarih',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF2D3142),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  InkWell(
-                    onTap: _selectDate,
-                    borderRadius: BorderRadius.circular(16),
-                    child: Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 60,
+                    child: ElevatedButton(
+                      onPressed: _saveTransaction,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: mainColor,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20)),
+                        elevation: 5,
+                        shadowColor: mainColor.withOpacity(0.4),
                       ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.calendar_today_outlined,
-                            color: color,
-                          ),
-                          const SizedBox(width: 16),
-                          Text(
-                            '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
+                      child: Text(
+                        isExpense ? 'Gider Ekle' : 'Gelir Ekle',
+                        style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white),
                       ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // Note Preview (if exists)
-                  if (_descriptionController.text.isNotEmpty)
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: Colors.grey[300]!,
-                          width: 1,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.note_outlined,
-                            color: Colors.grey[600],
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              _descriptionController.text,
-                              style: TextStyle(
-                                color: Colors.grey[800],
-                                fontSize: 14,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          IconButton(
-                            onPressed: () {
-                              setState(() {
-                                _descriptionController.clear();
-                              });
-                            },
-                            icon: Icon(
-                              Icons.close,
-                              color: Colors.grey[400],
-                              size: 20,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                  const SizedBox(height: 100), // Space for FAB
-                ],
-              ),
-            ),
-          ),
-
-          // FAB Menu
-          Positioned(
-            right: 20,
-            bottom: 20,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                // Menu Items
-                if (_showFabMenu) ...[
-                  _buildFabMenuItem(
-                    icon: Icons.mic_outlined,
-                    label: 'Sesli Komut',
-                    onTap: _handleVoiceAction,
-                  ),
-                  const SizedBox(height: 12),
-                  _buildFabMenuItem(
-                    icon: Icons.camera_alt_outlined,
-                    label: 'Fotoğraf Çek',
-                    onTap: _handleCameraAction,
-                  ),
-                  const SizedBox(height: 12),
-                  _buildFabMenuItem(
-                    icon: Icons.note_add_outlined,
-                    label: 'Not Ekle',
-                    onTap: _handleNoteAdd,
-                  ),
-                  const SizedBox(height: 16),
-                ],
-
-                // Main FAB
-                FloatingActionButton(
-                  onPressed: _toggleFabMenu,
-                  backgroundColor: const Color(0xFF6366F1),
-                  child: AnimatedRotation(
-                    turns: _showFabMenu ? 0.125 : 0,
-                    duration: const Duration(milliseconds: 200),
-                    child: Icon(
-                      _showFabMenu ? Icons.close : Icons.add,
-                      color: Colors.white,
                     ),
                   ),
                 ),
               ],
             ),
           ),
-        ],
-      ),
-      bottomNavigationBar: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 10,
-              offset: const Offset(0, -5),
+
+          // FAB Menü - Yukarıda
+          if (_isFabMenuOpen) ...[
+            Positioned(
+              right: 16,
+              bottom: 200,
+              child: _buildFabMenuItem(
+                icon: Icons.camera_alt,
+                label: 'Fotoğraf Çek',
+                color: Colors.blue,
+                isDarkMode: isDarkMode,
+                onTap: () => _pickImage(true),
+              ),
+            ),
+            Positioned(
+              right: 16,
+              bottom: 140,
+              child: _buildFabMenuItem(
+                icon: Icons.image,
+                label: 'Galeri',
+                color: Colors.purple,
+                isDarkMode: isDarkMode,
+                onTap: () => _pickImage(false),
+              ),
+            ),
+            Positioned(
+              right: 16,
+              bottom: 80,
+              child: _buildFabMenuItem(
+                icon: _isListening ? Icons.mic : Icons.mic_none,
+                label: _isListening ? 'Dinleniyor' : 'Sesli Komut',
+                color: _isListening ? Colors.red : mainColor,
+                isDarkMode: isDarkMode,
+                onTap: _startListening,
+              ),
             ),
           ],
-        ),
-        child: SafeArea(
-          child: ElevatedButton(
-            onPressed: _handleSave,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: color,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 18),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              elevation: 0,
-            ),
-            child: Text(
-              isIncome ? 'Gelir Ekle' : 'Gider Ekle',
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+
+          // ARTI BUTONU - MANUEL POZİSYON (SABİT)
+          Positioned(
+            right: 16,
+            bottom: 16,
+            child: Material(
+              elevation: 6,
+              shape: const CircleBorder(),
+              color: mainColor,
+              child: InkWell(
+                onTap: () {
+                  setState(() => _isFabMenuOpen = !_isFabMenuOpen);
+                },
+                customBorder: const CircleBorder(),
+                child: Container(
+                  width: 56,
+                  height: 56,
+                  alignment: Alignment.center,
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    child: Icon(
+                      _isFabMenuOpen ? Icons.close : Icons.add,
+                      key: ValueKey(_isFabMenuOpen),
+                      color: Colors.white,
+                      size: 28,
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -716,42 +585,54 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
   Widget _buildFabMenuItem({
     required IconData icon,
     required String label,
+    required Color color,
+    required bool isDarkMode,
     required VoidCallback onTap,
   }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.1),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: const Color(0xFF6366F1), size: 20),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF2D3142),
+    return GestureDetector(
+      onTap: onTap,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: isDarkMode ? const Color(0xFF2D2D2D) : Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
                 ),
+              ],
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                color: isDarkMode ? Colors.white : Colors.black87,
+                fontWeight: FontWeight.w500,
               ),
-            ],
+            ),
           ),
-        ),
+          const SizedBox(width: 12),
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: color.withOpacity(0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Icon(icon, color: Colors.white, size: 24),
+          ),
+        ],
       ),
     );
   }

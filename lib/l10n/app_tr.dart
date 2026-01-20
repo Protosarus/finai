@@ -13,7 +13,7 @@ class AppLocalizationsTr extends AppLocalizations {
   String get continue_ => 'Devam Et';
 
   @override
-  String get welcomeBack => 'Hoş Geldin!';
+  String get welcomeBack => 'Hoş Geldiniz!';
 
   @override
   String get appSubtitle => 'Finansal geleceğini\nYapay Zeka ile yönet';

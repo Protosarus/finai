@@ -13,7 +13,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get continue_ => 'Continue';
 
   @override
-  String get welcomeBack => 'Welcome Back!';
+  String get welcomeBack => 'Welcome!';
 
   @override
   String get appSubtitle => 'Manage your financial future\nwith AI';

@@ -54,6 +54,7 @@ dependencies:
   
   # Icons
   cupertino_icons: ^1.0.6
+  quick_actions: ^1.1.0
 
 dev_dependencies:
   flutter_test:
