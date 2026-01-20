@@ -102,7 +102,7 @@ ${transactionState.transactions.take(5).map((t) => '- ${t.type.name == "income" 
     }
 
     final model = GenerativeModel(
-      model: 'gemini-1.5-flash-latest',
+      model: 'gemini-3-flash-preview',
       apiKey: apiKey,
     );
 
