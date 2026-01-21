@@ -2,8 +2,32 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-<key>NSSpeechRecognitionUsageDescription</key>
-<string>Sesli komutları tanımak için konuşma tanıma izni gerekiyor.</string>
+	<!-- Existing Speech Recognition -->
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Sesli komutları tanımak için konuşma tanıma izni gerekiyor.</string>
+	
+	<!-- NEW: Siri Usage Permission -->
+	<key>NSSiriUsageDescription</key>
+	<string>Siri ile hızlı gider ve gelir eklemek için izin gerekiyor.</string>
+	
+	<!-- NEW: Supported Intents for Siri -->
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>AddExpenseIntent</string>
+		<string>AddIncomeIntent</string>
+		<string>ScanReceiptIntent</string>
+		<string>ViewStatsIntent</string>
+	</array>
+	
+	<!-- NEW: Intents Supported -->
+	<key>IntentsSupported</key>
+	<array>
+		<string>AddExpenseIntent</string>
+		<string>AddIncomeIntent</string>
+		<string>ScanReceiptIntent</string>
+		<string>ViewStatsIntent</string>
+	</array>
+	
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

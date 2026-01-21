@@ -6,19 +6,22 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:quick_actions/quick_actions.dart';
+import 'package:intelligence/intelligence.dart'; // 🆕 Intelligence paketi
 
 // --- KENDİ DOSYALARIMIZ ---
 import 'firebase_options.dart';
-import 'core/theme/app_theme.dart'; // Tema dosyamız
-import 'core/providers/theme_provider.dart'; // Tema yöneticimiz
+import 'core/theme/app_theme.dart';
+import 'core/providers/theme_provider.dart';
 import 'core/widgets/phoenix.dart';
 import 'features/auth/presentation/screens/login_screen.dart';
 import 'features/language/presentation/screens/language_selection_screen.dart';
+import 'features/ai_assistant/presentation/screens/ai_assistant_screen.dart';
 import 'l10n/app_localizations_delegate.dart';
 
 // Quick Actions yönlendirmesi için gerekli
 import 'features/transactions/presentation/screens/add_transaction_screen.dart';
 import 'features/transactions/data/models/transaction_model.dart';
+import 'core/services/camera_service.dart';
 
 // Uygulama genelinde navigasyonu yönetmek için anahtar
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -64,7 +67,7 @@ class FinAIApp extends ConsumerStatefulWidget {
 }
 
 class _FinAIAppState extends ConsumerState<FinAIApp> {
-  Locale _locale = const Locale('en'); // Varsayılan dil
+  Locale _locale = const Locale('en');
   final QuickActions quickActions = const QuickActions();
 
   @override
@@ -72,6 +75,7 @@ class _FinAIAppState extends ConsumerState<FinAIApp> {
     super.initState();
     _loadLocale();
     _setupQuickActions();
+    _setupIntelligence(); // 🆕 Intelligence (Siri) kurulumu
   }
 
   // --- DİL AYARINI YÜKLE ---
@@ -83,31 +87,160 @@ class _FinAIAppState extends ConsumerState<FinAIApp> {
     });
   }
 
-  // --- HIZLI EYLEMLER (BASILI TUTUNCA ÇIKAN MENÜ) ---
-  void _setupQuickActions() {
-    quickActions.initialize((shortcutType) {
-      if (shortcutType == 'voice_expense') {
-        // Uygulama açılınca biraz bekle ve sayfaya git
-        Future.delayed(const Duration(milliseconds: 500), () {
+  // --- 🆕 INTELLIGENCE (SİRİ) KURULUM ---
+  void _setupIntelligence() {
+    // Siri'den gelen selection'ları dinle
+    Intelligence().selectionsStream().listen((intentName) {
+      debugPrint('🎯 Siri Intent Triggered: $intentName');
+      _handleSiriIntent(intentName);
+    });
+
+    debugPrint('✅ Intelligence (Siri) dinleniyor!');
+  }
+
+  // --- 🆕 SİRİ KOMUTLARINI YÖNLENDİR ---
+  void _handleSiriIntent(String intentName) {
+    Future.delayed(const Duration(milliseconds: 300), () {
+      switch (intentName) {
+        case 'AddExpenseIntent':
+          // "Hey Siri, gider ekle"
+          debugPrint('🎤 Sesli gider ekleme açılıyor...');
           navigatorKey.currentState?.push(
             MaterialPageRoute(
               builder: (_) => const AddTransactionScreen(
                 type: TransactionType.expense,
-                autoStartVoice: true, // Otomatik mikrofon aç
+                autoStartVoice: true,
               ),
             ),
           );
-        });
+          break;
+
+        case 'AddIncomeIntent':
+          // "Hey Siri, gelir ekle"
+          debugPrint('💰 Gelir ekleme açılıyor...');
+          navigatorKey.currentState?.push(
+            MaterialPageRoute(
+              builder: (_) => const AddTransactionScreen(
+                type: TransactionType.income,
+              ),
+            ),
+          );
+          break;
+
+        case 'ScanReceiptIntent':
+          // "Hey Siri, fatura tara"
+          debugPrint('📸 Fatura tarama açılıyor...');
+          _handleReceiptScan();
+          break;
+
+        case 'ViewStatsIntent':
+          // "Hey Siri, istatistiklerimi göster"
+          debugPrint('📊 İstatistikler açılıyor...');
+          navigatorKey.currentState?.push(
+            MaterialPageRoute(
+              builder: (_) => const AIAssistantScreen(),
+            ),
+          );
+          break;
+
+        default:
+          debugPrint('⚠️ Bilinmeyen Siri Intent: $intentName');
       }
     });
+  }
 
+  // --- HIZLI EYLEMLER (BASILI TUTUNCA ÇIKAN MENÜ) ---
+  void _setupQuickActions() {
+    quickActions.initialize((shortcutType) {
+      debugPrint('🚀 Quick Action triggered: $shortcutType');
+
+      // Biraz bekle, uygulama yüklenir
+      Future.delayed(const Duration(milliseconds: 500), () {
+        switch (shortcutType) {
+          case 'voice_expense':
+            // Sesli gider ekleme
+            navigatorKey.currentState?.push(
+              MaterialPageRoute(
+                builder: (_) => const AddTransactionScreen(
+                  type: TransactionType.expense,
+                  autoStartVoice: true,
+                ),
+              ),
+            );
+            break;
+
+          case 'scan_receipt':
+            // Fatura tarama
+            _handleReceiptScan();
+            break;
+
+          case 'quick_income':
+            // Hızlı gelir ekleme
+            navigatorKey.currentState?.push(
+              MaterialPageRoute(
+                builder: (_) => const AddTransactionScreen(
+                  type: TransactionType.income,
+                ),
+              ),
+            );
+            break;
+
+          case 'ai_assistant':
+            // AI Danışman
+            navigatorKey.currentState?.push(
+              MaterialPageRoute(
+                builder: (_) => const AIAssistantScreen(),
+              ),
+            );
+            break;
+        }
+      });
+    });
+
+    // 4 hızlı eylem tanımla
     quickActions.setShortcutItems(<ShortcutItem>[
       const ShortcutItem(
         type: 'voice_expense',
-        localizedTitle: 'Sesli Gider Ekle',
-        icon: 'mic',
+        localizedTitle: '🎤 Sesli Gider Ekle',
+        icon: 'ic_menu_call',
+      ),
+      const ShortcutItem(
+        type: 'scan_receipt',
+        localizedTitle: '📸 Fatura Tara',
+        icon: 'ic_menu_camera',
+      ),
+      const ShortcutItem(
+        type: 'quick_income',
+        localizedTitle: '💰 Gelir Ekle',
+        icon: 'ic_menu_add',
+      ),
+      const ShortcutItem(
+        type: 'ai_assistant',
+        localizedTitle: '🤖 AI Danışman',
+        icon: 'ic_menu_send',
       ),
     ]);
+  }
+
+  // Fatura tarama işlemi
+  Future<void> _handleReceiptScan() async {
+    try {
+      final cameraService = CameraService();
+      final imagePath = await cameraService.takePhoto();
+
+      if (imagePath != null) {
+        // OCR sonucu ile gider ekle ekranına git
+        navigatorKey.currentState?.push(
+          MaterialPageRoute(
+            builder: (_) => const AddTransactionScreen(
+              type: TransactionType.expense,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('❌ Fatura tarama hatası: $e');
+    }
   }
 
   @override
@@ -123,7 +256,7 @@ class _FinAIAppState extends ConsumerState<FinAIApp> {
       // --- TEMA AYARLARI ---
       themeMode: themeMode, // Sistem, Açık veya Koyu
       theme: AppTheme.lightTheme, // Aydınlık Tema
-      darkTheme: AppTheme.darkTheme, // Karanlık Tema (Artık bağlı!)
+      darkTheme: AppTheme.darkTheme, // Karanlık Tema
 
       // --- DİL AYARLARI ---
       locale: _locale,

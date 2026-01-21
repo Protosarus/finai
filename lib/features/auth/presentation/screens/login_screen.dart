@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart'; // 🆕 Apple Sign In
 import 'package:finai/features/auth/data/services/auth_service.dart';
 import 'package:finai/features/dashboard/presentation/screens/dashboard_screen.dart';
 import 'package:finai/features/auth/presentation/screens/register_screen.dart';
@@ -61,12 +62,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
-  // --- GERÇEK GOOGLE GİRİŞİ ---
+  // --- GOOGLE GİRİŞİ ---
   Future<void> _handleGoogleLogin() async {
     setState(() => _isLoading = true);
 
     try {
-      // Servisteki gerçek fonksiyon
       final user = await _authService.signInWithGoogle();
 
       if (user != null && mounted) {
@@ -88,12 +88,55 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
+  // --- 🆕 APPLE GİRİŞİ ---
+  Future<void> _handleAppleLogin() async {
+    setState(() => _isLoading = true);
+
+    try {
+      // Apple Sign In credential al
+      final credential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+      );
+
+      // OAuthProvider oluştur
+      final oauthCredential = OAuthProvider("apple.com").credential(
+        idToken: credential.identityToken,
+        accessToken: credential.authorizationCode,
+      );
+
+      // Firebase'e giriş yap
+      final userCredential =
+          await FirebaseAuth.instance.signInWithCredential(oauthCredential);
+
+      if (userCredential.user != null && mounted) {
+        debugPrint('✅ Apple ile giriş başarılı: ${userCredential.user?.email}');
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const DashboardScreen()),
+        );
+      }
+    } catch (e) {
+      debugPrint('❌ Apple girişi hatası: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Apple girişi başarısız: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
 
     return Scaffold(
-      // Klavye açılınca arkaplan bozulmasın diye false yapıyoruz
       resizeToAvoidBottomInset: false,
       body: Container(
         width: double.infinity,
@@ -172,7 +215,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                 const SizedBox(height: 24),
 
-                // --- INPUTLAR (DÜZELTİLDİ: ARTIK HEP BEYAZ) ---
+                // --- INPUTLAR ---
                 _buildTextField(
                   controller: _emailController,
                   hint: 'E-posta',
@@ -244,9 +287,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       child: _buildSocialButton(
                         icon: Icons.g_mobiledata,
                         label: 'Google',
-                        onTap: _isLoading
-                            ? () {}
-                            : _handleGoogleLogin, // GERÇEK GİRİŞ
+                        onTap: _isLoading ? () {} : _handleGoogleLogin,
                       ),
                     ),
                     const SizedBox(width: 16),
@@ -254,13 +295,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       child: _buildSocialButton(
                         icon: Icons.apple,
                         label: 'Apple',
-                        onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content:
-                                    Text('Apple Girişi yakında eklenecek')),
-                          );
-                        },
+                        onTap: _isLoading
+                            ? () {}
+                            : _handleAppleLogin, // 🆕 GERÇEK APPLE GİRİŞİ
                         isBlack: true,
                       ),
                     ),
@@ -305,7 +342,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
   }
 
-  // YARDIMCI WIDGET: INPUT (SİYAHLAŞMA SORUNU ÇÖZÜLDÜ)
+  // YARDIMCI WIDGET: INPUT
   Widget _buildTextField({
     required TextEditingController controller,
     required String hint,
@@ -314,27 +351,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white, // Dış çerçeve her zaman beyaz
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
       ),
       child: TextField(
         controller: controller,
         obscureText: isObscure,
-        // Yazı rengini zorla siyah yapıyoruz (Karanlık modda beyaz olmasın diye)
         style: const TextStyle(color: Colors.black87),
         decoration: InputDecoration(
           hintText: hint,
-          // İpucu rengini gri yapıyoruz
           hintStyle: TextStyle(color: Colors.grey[400]),
           prefixIcon: Icon(icon, color: const Color(0xFF6366F1)),
-
-          // --- BURASI DÜZELTİLDİ ---
           filled: true,
-          fillColor: Colors.white, // İç dolguyu zorla beyaz yapıyoruz
-          // -------------------------
-
+          fillColor: Colors.white,
           border: InputBorder.none,
-          // Kenarlık ayarlarını da temizliyoruz ki tema karışmasın
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide.none,
@@ -370,7 +400,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         ),
         child: Center(
           child: label == 'Google'
-              // RENKLİ GOOGLE YAZISI
               ? RichText(
                   text: const TextSpan(
                     style: TextStyle(
